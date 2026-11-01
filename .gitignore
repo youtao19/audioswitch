@@ -34,6 +34,13 @@ config.local.toml
 *.log
 logs/
 
+# 运行时缓存（含本机程序路径 / 窗口位置，不要提交）
+app_names.json
+ui_state.json
+
+# 调试截图
+_shot*.png
+
 # 打包 / 快捷方式生成的产物
 *.exe
 *.spec

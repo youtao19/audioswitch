@@ -18,8 +18,13 @@ aswitch.cmd list          :: 2. 核对设备别名
 aswitch.cmd use headset   :: 3. 手动切一次，确认声音去了耳机
 aswitch.cmd use speaker   :: 4. 再切回来
 aswitch.cmd start         :: 5. 后台启动托盘 + 热键 + 自动切换
-aswitch.cmd status        :: 6. 随时确认它在不在跑
+aswitch.cmd add           :: 6. 图形界面添加游戏（双击列表里的程序即可）
+aswitch.cmd status        :: 7. 随时确认它在不在跑
 ```
+
+> 加游戏不用手硕 exe 名：托盘右键 →「添加应用…」，或 `aswitch add`，
+> 在“正在运行的程序”列表里双击目标就自动写进 `config.toml` 并立即生效；
+> 也可以「浏览 exe 文件」选任意程序，支持 `.lnk` 快捷方式。
 
 > 等价写法：`python -m aswitch <命令>`。如果觉得 `aswitch.cmd` 好用，可以把这个目录加进 PATH。
 
@@ -58,6 +63,10 @@ powershell -ExecutionPolicy Bypass -File assets\make-shortcuts.ps1
 | `aswitch status` | 当前每个角色用的是哪个设备 |
 | `aswitch use <profile>` | 切换到某个 profile |
 | `aswitch toggle` | 在 `[settings] toggle` 的两个 profile 间切换 |
+| `aswitch rules` | 列出每个 profile 下有哪些程序（看“加到哪了”） |
+| `aswitch learn [exe]` | 收录当前前台程序（或指定 exe）到规则；等效于 `Ctrl+Alt+Shift+1` |
+| `aswitch add [exe] [--profile 耳机]` | **添加应用**：不给 exe 就弹图形选择器（选运行中的程序 / 浏览 exe），给了就直接写进规则；都会通知守护进程立即生效 |
+| `aswitch remove <exe> [--profile 耳机]` | 从规则里移除应用（别名 `rm`）；如果删到规则为空，会把整块 `[[rules]]` 删掉 |
 | `aswitch init [-f]` | 生成/覆盖配置模板 |
 | `aswitch launch --profile headset -- "C:\game\game.exe"` | 先切设备再启动程序 |
 | `aswitch start` | 后台启动守护进程（不占终端） |
@@ -102,6 +111,8 @@ enabled = true
 "ctrl+alt+1" = "headset"   # 值可以是 profile 名，或 "toggle"
 "ctrl+alt+2" = "speaker"
 "ctrl+alt+3" = "toggle"
+"ctrl+alt+shift+1" = "learn:headset"   # 一键收录当前前台程序
+"ctrl+alt+shift+2" = "learn:speaker"
 ```
 
 > 全局热键是先到先得：如果日志里出现 `注册热键 xxx 失败（1409）`，说明那个组合已被别的程序占了。
@@ -172,6 +183,10 @@ aswitch/        包
   watcher.py    进程轮询 + 规则状态机
   hotkey.py     RegisterHotKey + 消息循环
   tray.py       托盘图标与菜单
+  picker.py     图形化添加应用（tkinter）
+  appicon.py    exe 图标 -> PNG（零依赖，手写 PNG 编码）
+  appnames.py   exe -> 程序名（进程版本信息 / Steam / 注册表）
+  ipc.py        具名事件 IPC（quit / reload）
   cli.py        命令行
 aswitch.cmd             启动器
 aswitch-daemon.vbs      静默启动（用于开机自启）
@@ -181,6 +196,8 @@ assets/make-ico.ps1     PNG -> 多尺寸 ICO（纯 PowerShell，无需 Pillow）
 assets/preview-ico.ps1  把 ICO 各尺寸放大成 PNG，用来检查小尺寸可读性
 assets/make-shortcuts.ps1  重建两个桌面快捷方式
 docs/usage.html         图文版使用说明（单文件 HTML，图标已内嵌）
+app_names.json          程序名缓存（程序运行过一次就自动记住，可手改）
+ui_state.json           管理窗口的大小 / 上次选的 profile
 config.toml             你的配置
 ```
 

@@ -21,6 +21,7 @@ MOD_WIN = 0x0008
 MOD_NOREPEAT = 0x4000
 WM_HOTKEY = 0x0312
 WM_QUIT = 0x0012
+WM_APP_CALLBACK = 0x8000 + 42  # 自定义：把回调甩回消息循环线程执行
 
 user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
 user32.RegisterHotKey.restype = wintypes.BOOL
@@ -94,6 +95,7 @@ class HotkeyManager:
         self._callbacks: dict[int, tuple[str, object]] = {}
         self._thread_id = 0
         self._next_id = 1
+        self._pending: list = []
 
     def register(self) -> None:
         for spec, callback in self._specs.items():
@@ -150,11 +152,31 @@ class HotkeyManager:
                             callback()  # type: ignore[operator]
                         except Exception:  # noqa: BLE001
                             log.exception("热键 %s 的处理函数出错", spec)
+                elif msg.message == WM_APP_CALLBACK:
+                    self._drain()
                 else:
                     user32.TranslateMessage(byref(msg))
                     user32.DispatchMessageW(byref(msg))
         finally:
             self.unregister()
+
+    def call_soon(self, fn) -> None:
+        """把回调排到消息循环线程执行。
+
+        热键注册必须发在跑消息循环的那个线程上（RegisterHotKey 把热键绑到
+        调用者线程的消息队列），所以其它线程不能直接调用 reload()。
+        """
+        self._pending.append(fn)
+        if self._thread_id:
+            user32.PostThreadMessageW(self._thread_id, WM_APP_CALLBACK, 0, 0)
+
+    def _drain(self) -> None:
+        while self._pending:
+            fn = self._pending.pop(0)
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                log.exception("消息循环回调出错")
 
     def stop(self) -> None:
         if self._thread_id:

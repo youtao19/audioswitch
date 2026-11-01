@@ -24,6 +24,8 @@ DEFAULT_HOTKEYS = {
     "ctrl+alt+1": "headset",
     "ctrl+alt+2": "speaker",
     "ctrl+alt+3": "toggle",
+    "ctrl+alt+shift+1": "learn:headset",
+    "ctrl+alt+shift+2": "learn:speaker",
 }
 
 
@@ -367,6 +369,8 @@ enabled = true
 "ctrl+alt+1" = "{"headset" if headset_alias else "speaker"}"
 "ctrl+alt+2" = "speaker"
 "ctrl+alt+3" = "toggle"
+"ctrl+alt+shift+1" = "learn:{"headset" if headset_alias else "speaker"}"   # 一键收录当前前台程序
+"ctrl+alt+shift+2" = "learn:speaker"
 """
 
     hint = []
@@ -375,3 +379,146 @@ enabled = true
     hint.append(f"当前默认音响 = {speaker_alias} ({speaker.label})")
     hint.append("请用 `python -m aswitch list` 核对，然后 `python -m aswitch use headset` 试听确认。")
     return text, "\n".join(hint)
+
+
+# ---------- 增量修改：把 exe 加进规则 ----------
+def _normalize_exe(exe: str) -> str:
+    r"""把 "C:\game\game.exe" / "game.exe" 统一成进程名。"""
+    name = (exe or "").strip().strip('"').strip("'")
+    if not name:
+        raise ConfigError("exe 不能为空")
+    if "\\" in name or "/" in name:
+        name = Path(name).name
+    if not name:
+        raise ConfigError(f"无法从 {exe!r} 解析出可执行文件名")
+    return name
+
+
+def add_exe_rule(exe: str, profile: str, path: Path | None = None,
+                 move: bool = False) -> tuple[bool, str]:
+    """把 exe 加入某个 profile 的 [[rules]]。
+
+    move=True 时，如果它已经在别的 profile 里，就先从那边移除（“一键收录”用）。
+    直接做**文本级插入**（不重新序列化整个文件），所以注释、排版、你手写的
+    顺序都会保留。写入前会用 tomllib 校验语法，校验失败则不落盘。
+    """
+    path = Path(path or config_path())
+    if not path.exists():
+        raise ConfigError(f"找不到配置文件 {path}")
+    text = path.read_text(encoding="utf-8")
+    moved_from: list[str] = []
+    if move:
+        name = _normalize_exe(exe)
+        try:
+            current = Config.load(path)
+        except ConfigError:
+            current = None
+        if current is not None:
+            for other in current.profiles:
+                if other == profile:
+                    continue
+                if any(name.lower() == item.lower() for rule in current.rules
+                       if rule.profile == other for item in rule.exe):
+                    if remove_exe_rule(name, other, path)[0]:
+                        moved_from.append(other)
+            if moved_from:
+                text = path.read_text(encoding="utf-8")
+
+    name = _normalize_exe(exe)
+
+    cfg = Config.load(path)
+    if profile not in cfg.profiles:
+        raise ConfigError(f"profile '{profile}' 不存在，可用: {', '.join(cfg.profiles)}")
+
+    header_re = re.compile(r"(?m)^\[\[rules\]\][ \t]*$")
+    table_re = re.compile(r"(?m)^\[(?!\[)")
+    starts = [m.start() for m in header_re.finditer(text)] + [len(text)]
+
+    for i in range(len(starts) - 1):
+        start, limit = starts[i], starts[i + 1]
+        nxt = table_re.search(text, start + len("[[rules]]"))
+        end = min(nxt.start(), limit) if nxt else limit
+        region = text[start:end]
+        prof_m = re.search(r'(?m)^\s*profile\s*=\s*"([^"]*)"', region)
+        exe_m = re.search(r"(?ms)^\s*exe\s*=\s*\[(.*?)\]", region)
+        if not prof_m or prof_m.group(1) != profile or not exe_m:
+            continue
+        items = re.findall(r'"([^"]+)"', exe_m.group(1))
+        if any(item.lower() == name.lower() for item in items):
+            return False, f"{name} 已经在 {profile} 的规则里了"
+        items.append(name)
+        if "\n" in exe_m.group(1):  # 原来是多行数组，保持多行
+            body = "".join(f'\n  "{item}",' for item in items) + "\n"
+        else:
+            body = ", ".join(f'"{item}"' for item in items)
+        new_array = f"exe = [{body}]"
+        new_text = text[: start + exe_m.start()] + new_array + text[start + exe_m.end():]
+        _write_checked(path, new_text)
+        suffix = f"（已从 {", ".join(moved_from)} 移过来）" if moved_from else ""
+        return True, f"已加入 {profile} 的规则：{name}{suffix}"
+
+    # 该 profile 还没有规则 -> 追加一个新的 [[rules]] 块
+    block = f'[[rules]]\nexe = ["{name}"]\nprofile = "{profile}"\nenabled = true\n'
+    hotkeys_m = re.search(r"(?m)^\[hotkeys\]", text)
+    if hotkeys_m:
+        new_text = text[: hotkeys_m.start()] + block + "\n" + text[hotkeys_m.start():]
+    else:
+        new_text = text.rstrip("\n") + "\n\n" + block
+    _write_checked(path, new_text)
+    suffix = f"（已从 {", ".join(moved_from)} 移过来）" if moved_from else ""
+    return True, f"已新增规则：{name} -> {profile}{suffix}"
+
+
+def _write_checked(path: Path, text: str) -> None:
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"生成的配置语法有误，已放弃写入：{exc}") from exc
+    if "profiles" not in parsed:
+        raise ConfigError("生成的配置缺少 [profiles]，已放弃写入")
+    path.write_text(text, encoding="utf-8")
+
+
+def remove_exe_rule(exe: str, profile: str, path: Path | None = None) -> tuple[bool, str]:
+    """从某个 profile 的 [[rules]] 里移除 exe（同样是文本级编辑）。
+
+    如果移除后数组空了，就把整个 [[rules]] 块删掉，避免留下空规则。
+    """
+    path = Path(path or config_path())
+    if not path.exists():
+        raise ConfigError(f"找不到配置文件 {path}")
+    text = path.read_text(encoding="utf-8")
+    name = _normalize_exe(exe)
+
+    header_re = re.compile(r"(?m)^\[\[rules\]\][ 	]*$")
+    table_re = re.compile(r"(?m)^\[(?!\[)")
+    starts = [m.start() for m in header_re.finditer(text)] + [len(text)]
+
+    for i in range(len(starts) - 1):
+        start, limit = starts[i], starts[i + 1]
+        nxt = table_re.search(text, start + len("[[rules]]"))
+        end = min(nxt.start(), limit) if nxt else limit
+        region = text[start:end]
+        prof_m = re.search(r'(?m)^\s*profile\s*=\s*"([^"]*)"', region)
+        exe_m = re.search(r"(?ms)^\s*exe\s*=\s*\[(.*?)\]", region)
+        if not prof_m or prof_m.group(1) != profile or not exe_m:
+            continue
+        items = re.findall(r'"([^"]+)"', exe_m.group(1))
+        remaining = [item for item in items if item.lower() != name.lower()]
+        if len(remaining) == len(items):
+            return False, f"{name} 不在 {profile} 的规则里"
+        if not remaining:
+            new_text = text[:start] + text[end:]
+            new_text = re.sub(r"\n{3,}", "\n\n", new_text)
+            _write_checked(path, new_text)
+            return True, f"已移除 {name}（该规则已空，整块删除）"
+        if "\n" in exe_m.group(1):
+            body = "".join(f'\n  "{item}",' for item in remaining) + "\n"
+        else:
+            body = ", ".join(f'"{item}"' for item in remaining)
+        new_array = f"exe = [{body}]"
+        new_text = text[: start + exe_m.start()] + new_array + text[start + exe_m.end():]
+        _write_checked(path, new_text)
+        return True, f"已从 {profile} 的规则里移除：{name}"
+
+    return False, f"{name} 不在 {profile} 的规则里"

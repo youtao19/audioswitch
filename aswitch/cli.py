@@ -14,37 +14,28 @@ from ctypes import byref, wintypes
 from pathlib import Path
 
 from . import __version__
+from . import appnames
 from . import config as cfgmod
 from . import devices as dv
 from . import engine
 from . import hotkey as hk
+from . import ipc
 from . import watcher as wt
 
-QUIT_EVENT_NAME = "aswitch-quit-event"
-EVENT_MODIFY_STATE = 0x0002
-
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-kernel32.CloseHandle.restype = wintypes.BOOL
-kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
-kernel32.CreateEventW.restype = wintypes.HANDLE
-kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
-kernel32.OpenEventW.restype = wintypes.HANDLE
-kernel32.SetEvent.argtypes = [wintypes.HANDLE]
-kernel32.SetEvent.restype = wintypes.BOOL
-kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-kernel32.WaitForSingleObject.restype = wintypes.DWORD
+kernel32.CreateMutexW.restype = wintypes.HANDLE
 
 log = logging.getLogger("aswitch")
 
 
+def _short(text: str, limit: int = 26) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def daemon_running() -> bool:
     """守护进程是否在跑（靠它创建的具名事件判断）。"""
-    handle = kernel32.OpenEventW(EVENT_MODIFY_STATE, False, QUIT_EVENT_NAME)
-    if not handle:
-        return False
-    kernel32.CloseHandle(handle)
-    return True
+    return ipc.daemon_running()
 
 
 
@@ -201,6 +192,112 @@ def cmd_toggle(args: argparse.Namespace) -> int:
     return cmd_use(argparse.Namespace(profile=target))
 
 
+def cmd_add(args: argparse.Namespace) -> int:
+    """添加应用到自动切换规则：给了 exe 就直接加，不给就开图形选择器。"""
+    cfg = _load_config()
+    assert cfg is not None
+
+    if args.exe:
+        target = args.profile or next(iter(cfg.profiles), None)
+        if not target:
+            print("配置里还没有 profile，先跑 aswitch init")
+            return 2
+        try:
+            added, message = cfgmod.add_exe_rule(args.exe, target, cfg.path)
+        except cfgmod.ConfigError as exc:
+            print(f"失败：{exc}")
+            return 1
+        print(message)
+        if added:
+            if ipc.signal(ipc.RELOAD_EVENT):
+                print("已通知守护进程重载配置")
+            elif not ipc.daemon_running():
+                print("（守护进程没在运行，下次启动时生效）")
+        return 0
+
+    from . import picker
+
+    return picker.run(profile=args.profile)
+
+
+def cmd_remove(args: argparse.Namespace) -> int:
+    """从规则里移除一个应用。"""
+    cfg = _load_config()
+    assert cfg is not None
+    target = args.profile or next(iter(cfg.profiles), None)
+    if not target:
+        print("配置里还没有 profile")
+        return 2
+    try:
+        removed, message = cfgmod.remove_exe_rule(args.exe, target, cfg.path)
+    except cfgmod.ConfigError as exc:
+        print(f"失败：{exc}")
+        return 1
+    print(message)
+    if removed:
+        if ipc.signal(ipc.RELOAD_EVENT):
+            print("已通知守护进程重载配置")
+        elif not ipc.daemon_running():
+            print("（守护进程没在运行，下次启动时生效）")
+    return 0 if removed else 1
+
+
+def cmd_learn(args: argparse.Namespace) -> int:
+    """把「当前前台程序」或指定 exe 收录进某个 profile。"""
+    cfg = _load_config()
+    assert cfg is not None
+    profile = args.profile or next(iter(cfg.profiles), None)
+    if not profile:
+        print("配置里还没有 profile")
+        return 2
+
+    exe = args.exe
+    if not exe:
+        from . import picker
+
+        app = picker.foreground_app()
+        if not app:
+            print("找不到前台窗口")
+            return 1
+        title, exe, _pid = app
+        print(f"前台程序：{title}  ({exe})")
+        if exe in picker.NOT_GAME_EXES and not args.force:
+            print("它看起来不是游戏；确实要加请加 --force")
+            return 1
+
+    try:
+        added, message = cfgmod.add_exe_rule(exe, profile, cfg.path, move=True)
+    except cfgmod.ConfigError as exc:
+        print(f"失败：{exc}")
+        return 1
+    print(message)
+    if added:
+        if ipc.signal(ipc.RELOAD_EVENT):
+            print("已通知守护进程重载配置")
+    else:
+        print("（已经在规则里，只确保归属）")
+    return 0
+
+
+def cmd_rules(args: argparse.Namespace) -> int:
+    """列出每个 profile 下有哪些程序（看“加到哪了”）。"""
+    cfg = _load_config()
+    assert cfg is not None
+    from . import appnames
+
+    if not cfg.rules:
+        print("（还没有任何自动切换规则）")
+        return 0
+    for rule in cfg.rules:
+        state = "" if rule.enabled else "  [已禁用]"
+        print(f"\n[{rule.profile}]  {len(rule.exe)} 个程序{state}")
+        for exe in rule.exe:
+            name = appnames.display_name(exe)
+            print(f"    {exe:<32}{name}")
+    print()
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     path = cfgmod.config_path()
     if path.exists() and not args.force:
@@ -265,12 +362,9 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 def cmd_quit(args: argparse.Namespace) -> int:
     """通知正在运行的 daemon 退出。"""
-    handle = kernel32.OpenEventW(EVENT_MODIFY_STATE, False, QUIT_EVENT_NAME)
-    if not handle:
+    if not ipc.signal(ipc.QUIT_EVENT):
         print("没有正在运行的 aswitch daemon。")
         return 1
-    kernel32.SetEvent(handle)
-    kernel32.CloseHandle(handle)
     print("已通知 daemon 退出。")
     return 0
 
@@ -285,6 +379,10 @@ def cmd_help(args: argparse.Namespace) -> int:
 
   use <名字>      切到某个 profile（例: use 耳机）
   toggle          在两个 profile 之间切换
+  add [exe]       添加应用到自动切换规则（不给 exe 就开图形选择器）
+  learn [exe]     收录当前前台程序（或指定 exe）到规则，等效于 Ctrl+Alt+Shift+1
+  remove <exe>    从规则里移除应用
+  rules           列出每个 profile 下有哪些程序
   status          当前默认设备 + 守护进程状态
   list [-a]       列出音频设备（-a 含未连接）
   start / quit    启动 / 停止后台守护进程
@@ -347,11 +445,63 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
     def quit_all() -> None:
         log.info("收到退出请求")
+        state["quitting"] = True
         manager = state["manager"]
         if manager is not None:
             manager.stop()
 
     # ---------------- 热键 ----------------
+    def rules_of(profile: str) -> set[str]:
+        return {e.lower() for r in cfg.rules if r.profile == profile for e in r.exe}
+
+    def current_profile() -> str:
+        """当前生效的 profile（按当前设备推断），拿不到就用第一个。"""
+        for name in cfg.profiles:
+            try:
+                if engine.matches_profile(cfg, name):
+                    return name
+            except Exception:  # noqa: BLE001
+                pass
+        return next(iter(cfg.profiles), "")
+
+    def learn_exe(exe: str, title: str, pid: int | None, profile: str, source: str) -> None:
+        """把一个 exe 收录进 profile，并立即切过去（用于“一键收录”）。"""
+        snapshot = engine.snapshot()  # 必须在切设备之前拍
+        try:
+            added, message = cfgmod.add_exe_rule(exe, profile, cfg.path, move=True)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("收录 %s 失败: %s", exe, exc)
+            notify("收录失败", str(exc), warning=True)
+            return
+        name = appnames.display_name(exe, pid=pid) or appnames.pretty(exe)
+        if added:
+            # 先重载，再切，最后让 watcher 接管（避免它把切完的设备当快照）
+            reload_config()
+            switch_to(profile, f"{source} 收录「{name}」")
+            watcher = state.get("watcher")
+            if watcher is not None:
+                watcher.adopt(profile, snapshot)
+            log.info("已收录 %s(%s) -> %s", name, exe, profile)
+            notify(f"已记住：{name}", f"以后启动它自动切到 {profile}")
+        else:
+            switch_to(profile, f"{source}（已在规则里）")
+            notify(f"{name} 已在规则里", message)
+
+    def learn_foreground(profile: str, source: str = "热键") -> None:
+        from . import picker as picker_mod
+
+        app = picker_mod.foreground_app()
+        if not app:
+            log.info("%s 收录失败：找不到前台程序", source)
+            notify("无法收录", "找不到当前前台窗口")
+            return
+        title, exe, pid = app
+        if exe in picker_mod.NOT_GAME_EXES:
+            log.info("%s 收录跳过：%s 看起来不是游戏", source, exe)
+            notify("没有收录", f"「{title}」看起来不是游戏；确需添加请用「添加 / 管理应用…」")
+            return
+        learn_exe(exe, title, pid, profile, source)
+
     def build_bindings() -> dict:
         bindings: dict = {}
         if args.no_hotkeys:
@@ -364,10 +514,23 @@ def cmd_daemon(args: argparse.Namespace) -> int:
             action.__name__ = f"use {name}"
             return action
 
+        def bind_learn(name: str, spec: str):
+            def action() -> None:
+                learn_foreground(name, f"热键 {spec}")
+
+            action.__name__ = f"learn {name}"
+            return action
+
         for spec, action in cfg.hotkeys.items():
             action = action.strip()
             if action == "toggle":
                 bindings[spec] = do_toggle
+            elif action.startswith("learn:"):
+                target = action.split(":", 1)[1].strip()
+                if target in cfg.profiles:
+                    bindings[spec] = bind_learn(target, spec)
+                else:
+                    log.warning("热键 %s 的 learn 目标未知: %r", spec, target)
             elif action in cfg.profiles:
                 bindings[spec] = bind(action, spec)
             else:
@@ -378,7 +541,14 @@ def cmd_daemon(args: argparse.Namespace) -> int:
     state["manager"] = manager
 
     # ---------------- 托盘 ----------------
+    # 托盘菜单里“正在运行的程序”动态项的 id -> (exe, title, pid)
+    app_menu: dict[int, tuple[str, str, int]] = {}
+
     def build_menu() -> list:
+        from . import picker as picker_mod
+
+        app_menu.clear()
+        target = current_profile()
         items = []
         for index, name in enumerate(cfg.profiles):
             try:
@@ -386,7 +556,34 @@ def cmd_daemon(args: argparse.Namespace) -> int:
             except Exception:  # noqa: BLE001
                 checked = False
             items.append(ui.MenuItem(label=name, command=100 + index, checked=checked))
+        items.append(ui.MenuItem(separator=True))
+
+        # 一键收录当前前台程序
+        fg = picker_mod.foreground_app()
+        if fg:
+            title, _exe, _pid = fg
+            items.append(
+                ui.MenuItem(label=f"➕ 把「{_short(title)}」加入 {target}", command=310)
+            )
+
+        # 正在运行的程序子菜单
+        try:
+            running = picker_mod.visible_apps()
+        except Exception:  # noqa: BLE001
+            running = []
+        added = rules_of(target)
+        children = []
+        for index, (title, exe, pid) in enumerate(running):
+            command = 500 + index
+            app_menu[command] = (exe, title, pid)
+            mark = "✓ " if exe in added else ""
+            children.append(ui.MenuItem(label=f"{mark}{_short(title, 34)}", command=command))
+        if children:
+            items.append(ui.MenuItem(label="正在运行的程序", children=children))
+
+        items.append(ui.MenuItem(separator=True))
         items.append(ui.MenuItem(label="切换（toggle）", command=200))
+        items.append(ui.MenuItem(label="添加 / 管理应用…", command=300))
         items.append(ui.MenuItem(separator=True))
         items.append(ui.MenuItem(label="重载配置", command=900))
         items.append(ui.MenuItem(label="打开配置文件", command=901))
@@ -412,6 +609,17 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         manager.reload(build_bindings())
         log.info("配置已重载")
 
+    def open_picker() -> None:
+        """在子进程里开图形选择器，避免阻塞消息循环（否则热键会没反应）。"""
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+        exe = str(pythonw) if pythonw.exists() else sys.executable
+        subprocess.Popen(
+            [exe, "-m", "aswitch", "add"],
+            cwd=str(cfgmod.PROJECT_ROOT),
+            creationflags=0x00000008,  # DETACHED_PROCESS
+            close_fds=True,
+        )
+
     def on_command(command: int) -> None:
         if 100 <= command < 200:
             names = list(cfg.profiles)
@@ -420,6 +628,15 @@ def cmd_daemon(args: argparse.Namespace) -> int:
                 switch_to(names[index], "托盘")
         elif command == 200:
             do_toggle()
+        elif command == 300:
+            open_picker()
+        elif command == 310:
+            learn_foreground(current_profile(), "托盘")
+        elif 500 <= command < 600:
+            entry = app_menu.get(command)
+            if entry:
+                exe, title, pid = entry
+                learn_exe(exe, title, pid, current_profile(), "托盘")
         elif command == 900:
             reload_config()
         elif command == 901:
@@ -442,17 +659,30 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         watcher.start()
         state["watcher"] = watcher
 
-    # ---------------- 退出信号（aswitch quit / Ctrl+C） ----------------
+    # ---------------- 退出 / 重载信号（aswitch quit / aswitch add / Ctrl+C） ----------------
     ctrl_handler = _install_console_ctrl_handler(manager.stop)
     state["ctrl_handler"] = ctrl_handler  # 保持引用，避免回调被 GC
-    quit_event = kernel32.CreateEventW(None, False, False, QUIT_EVENT_NAME)
+
+    quit_event = ipc.create(ipc.QUIT_EVENT)
     if quit_event:
         def _wait_quit() -> None:
-            kernel32.WaitForSingleObject(quit_event, 0xFFFFFFFF)
+            ipc.wait(quit_event)
             log.info("收到 quit 信号，准备退出")
             manager.stop()
 
         threading.Thread(target=_wait_quit, name="aswitch-quit", daemon=True).start()
+
+    reload_event = ipc.create(ipc.RELOAD_EVENT)
+    if reload_event:
+        def _wait_reload() -> None:
+            while ipc.wait(reload_event):
+                if state.get("quitting"):
+                    return
+                log.info("收到 reload 信号")
+                # 必须回到消息循环线程执行（里面会重新注册热键）
+                manager.call_soon(reload_config)
+
+        threading.Thread(target=_wait_reload, name="aswitch-reload", daemon=True).start()
 
     log.info("audioswitch 守护进程已就绪（托盘=%s 热键=%d 规则=%d）",
              bool(state["tray"]), len(build_bindings()),
@@ -535,6 +765,25 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("init", help="生成配置模板")
     p.add_argument("-f", "--force", action="store_true")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser("add", help="添加应用到自动切换规则（图形选择器）")
+    p.add_argument("exe", nargs="?", help="进程名或 exe 路径；给了就不开图形界面")
+    p.add_argument("--profile", help="加到哪个 profile（默认第一个）")
+    p.set_defaults(func=cmd_add)
+
+    p = sub.add_parser("learn", help="把当前前台程序收录进规则（一键收录）")
+    p.add_argument("exe", nargs="?", help="指定进程名；不给就用当前前台窗口")
+    p.add_argument("--profile", help="收录到哪个 profile（默认第一个）")
+    p.add_argument("--force", action="store_true", help="即使是浏览器/终端也照加")
+    p.set_defaults(func=cmd_learn)
+
+    p = sub.add_parser("rules", help="列出每个 profile 下有哪些程序")
+    p.set_defaults(func=cmd_rules)
+
+    p = sub.add_parser("remove", aliases=["rm"], help="从规则里移除应用")
+    p.add_argument("exe", help="进程名或 exe 路径")
+    p.add_argument("--profile", help="从哪个 profile 移除（默认第一个）")
+    p.set_defaults(func=cmd_remove)
 
     p = sub.add_parser("launch", help="先切设备再启动程序")
     p.add_argument("--profile", required=True)

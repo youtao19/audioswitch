@@ -42,9 +42,9 @@ kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.CloseHandle.restype = wintypes.BOOL
 
 
-def running_exes() -> set[str]:
-    """当前所有进程的可执行文件名（小写）。用 Toolhelp，无需 psutil。"""
-    result: set[str] = set()
+def process_map() -> dict[int, str]:
+    """pid -> 可执行文件名（小写）。用 Toolhelp，无需 psutil。"""
+    result: dict[int, str] = {}
     snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snap == wintypes.HANDLE(-1).value or not snap:
         return result
@@ -54,11 +54,16 @@ def running_exes() -> set[str]:
         ok = kernel32.Process32FirstW(snap, ctypes.byref(entry))
         while ok:
             if entry.szExeFile:
-                result.add(entry.szExeFile.lower())
+                result[int(entry.th32ProcessID)] = entry.szExeFile.lower()
             ok = kernel32.Process32NextW(snap, ctypes.byref(entry))
     finally:
         kernel32.CloseHandle(snap)
     return result
+
+
+def running_exes() -> set[str]:
+    """当前所有进程的可执行文件名（小写）。"""
+    return set(process_map().values())
 
 
 class RuleWatcher(threading.Thread):
@@ -88,6 +93,17 @@ class RuleWatcher(threading.Thread):
     # ---------- 外部控制 ----------
     def stop(self) -> None:
         self._stop_event.set()
+
+    def adopt(self, profile: str | None, saved: dict[tuple[int, int], str] | None) -> None:
+        """外部已经手动切好了：直接接管状态。
+
+        用于“一键收录”：收录流程自己先快照旧设备、再切新设备，所以不能让
+        watcher 把这个已切好的状态当成“进入前的快照”，否则退出时会还原错。
+        """
+        with self._lock:
+            self.active_profile = profile
+            self._saved = saved
+            self._pending_restore_at = None
 
     # ---------- 规则判定 ----------
     def decide(self, exes: set[str]) -> tuple[str, str] | None:

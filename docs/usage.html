@@ -252,6 +252,7 @@ aswitch.cmd status</code></pre>
  音响
 ────────────
 切换（toggle）
+添加应用…
 重载配置
 打开配置文件
 退出</code></pre>
@@ -305,6 +306,10 @@ aswitch.cmd status</code></pre>
             <tr><td><code>aswitch launch --profile 耳机 -- "C:\game\game.exe"</code></td><td>先切设备，再启动程序（对付启动时锁死音频的游戏）</td></tr>
             <tr><td><code>aswitch config --open</code></td><td>打印/打开配置文件</td></tr>
             <tr><td><code>aswitch init [-f]</code></td><td>按当前设备重新生成配置模板（<code>-f</code> 覆盖，会丢掉中文改名）</td></tr>
+            <tr><td><code>aswitch rules</code></td><td>列出每个 profile 下有哪些程序（看“加到哪了”）</td></tr>
+            <tr><td><code>aswitch learn [exe]</code></td><td>收录当前前台程序（或指定 exe）到规则，等效于 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td></tr>
+            <tr><td><code>aswitch add [exe]</code></td><td><strong>添加应用</strong>：不给参数就弹图形选择器；给了 exe 就直接写进规则。两者都会通知守护进程立即生效</td></tr>
+            <tr><td><code>aswitch remove &lt;exe&gt;</code></td><td>从规则里移除应用（别名 <code>rm</code>）</td></tr>
             <tr><td><code>aswitch daemon [--no-tray] [--no-hotkeys] [--no-watch] [--dry-run]</code></td><td>前台运行守护进程，调试用</td></tr>
           </tbody>
         </table>
@@ -369,6 +374,32 @@ enabled = true
     <section id="auto">
       <h2><span class="n">5</span>自动切换规则</h2>
       <p class="lead">流程：进程出现 → 切耳机；进程全部退出 → 等 <code>restore_delay</code> 秒 → 还原成进入前的设备。</p>
+
+      <div class="note">
+        <div class="bar"></div>
+        <div>
+          <p><strong>最快：在游戏里按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></strong> ——
+          自动把当前前台程序收录进耳机规则并立即切过去，下次启动自动生效。
+          托右键也有「➕ 把「原神」加入 耳机」和「正在运行的程序 ▸」子菜单，效果一样。</p>
+          <p><strong>要批量管理/删除：<code>aswitch add</code> 打开管理窗口</strong>。
+          顶部<strong>只有一个下拉框「当前 profile」</strong>：选哪个就只显示哪个的规则，双击添加也加到它。</p>
+        </div>
+      </div>
+
+      <h3>用管理窗口（删除 / 摆渡）</h3>
+      <div class="note" style="background:var(--surface)">
+        <div class="bar" style="background:linear-gradient(180deg,#ffc24b,#f2932f)"></div>
+        <div>
+          <p><strong>顶部卡片</strong>：左边选 profile，右边直接显示它会切到哪个设备
+          （例：耳机 → 扬声器 (Misiom-Scorpio)）。右上<strong>「＋ 收录当前程序」</strong>等于热键收录。</p>
+          <p><strong>单击右侧「＋ 未添加 / ✓ 已添加」列即可增删</strong>（不用双击、不用右键）。
+          <strong>搜索框</strong>支持按程序名/进程名实时过滤；输入 <code>xxx.exe</code> 回车可直接添加。
+          双击行、或选中后按 <kbd>Enter</kbd>/<kbd>Delete</kbd> 也能切换。</p>
+          <p>灰行 = 还没加进当前 profile；正常色 = 已经在规则里。窗口大小和上次选的 profile 会被记住。
+          每行左侧的程序图标是从 exe 里直接提取的（零依赖，取不到时用系统通用图标）。
+          命令行里用 <code>aswitch rules</code> 可一次列出所有 profile 的规则。</p>
+        </div>
+      </div>
 
       <ol class="steps">
         <li>
@@ -526,6 +557,10 @@ enabled = true</code></pre>
 │  ├─ watcher.py       进程轮询 + 规则状态机
 │  ├─ hotkey.py        RegisterHotKey
 │  ├─ tray.py          托盘图标与菜单
+│  ├─ picker.py        图形化添加应用（tkinter）
+│  ├─ appicon.py       exe 图标 → PNG（零依赖）
+│  ├─ appnames.py      exe → 程序名（Steam/注册表/版本信息）
+│  ├─ ipc.py           具名事件 IPC（quit / reload）
 │  └─ cli.py           命令行
 ├─ assets/
 │  ├─ aswitch.png      图标源图

@@ -32,6 +32,7 @@ NIF_MESSAGE, NIF_ICON, NIF_TIP, NIF_INFO = 0x01, 0x02, 0x04, 0x10
 NIIF_INFO, NIIF_WARNING, NIIF_ERROR = 0x01, 0x02, 0x03
 
 MF_STRING, MF_SEPARATOR, MF_CHECKED, MF_GRAYED = 0x0000, 0x0800, 0x0008, 0x0001
+MF_POPUP = 0x0010
 TPM_RIGHTBUTTON, TPM_NONOTIFY, TPM_RETURNCMD = 0x0002, 0x0080, 0x0100
 
 IDI_APPLICATION = 32512
@@ -125,6 +126,7 @@ class MenuItem:
     checked: bool = False
     enabled: bool = True
     separator: bool = False
+    children: list["MenuItem"] | None = None  # 有 children 就是子菜单
 
 
 class TrayIcon:
@@ -255,6 +257,26 @@ class TrayIcon:
             return 0
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
 
+    def _build(self, items, hmenu: int) -> None:
+        for item in items:
+            if item.separator:
+                user32.AppendMenuW(hmenu, MF_SEPARATOR, 0, None)
+            elif item.children is not None:
+                submenu = user32.CreatePopupMenu()
+                if not submenu:
+                    continue
+                self._build(item.children, submenu)
+                user32.AppendMenuW(
+                    hmenu, MF_POPUP | MF_STRING, int(submenu), item.label
+                )
+            else:
+                flags = MF_STRING
+                if item.checked:
+                    flags |= MF_CHECKED
+                if not item.enabled:
+                    flags |= MF_GRAYED
+                user32.AppendMenuW(hmenu, flags, item.command, item.label)
+
     def _show_menu(self) -> None:
         try:
             items = self._menu_provider()
@@ -265,16 +287,7 @@ class TrayIcon:
         if not hmenu:
             return
         try:
-            for item in items:
-                if item.separator:
-                    user32.AppendMenuW(hmenu, MF_SEPARATOR, 0, None)
-                    continue
-                flags = MF_STRING
-                if item.checked:
-                    flags |= MF_CHECKED
-                if not item.enabled:
-                    flags |= MF_GRAYED
-                user32.AppendMenuW(hmenu, flags, item.command, item.label)
+            self._build(items, hmenu)
             point = wintypes.POINT()
             user32.GetCursorPos(byref(point))
             user32.SetForegroundWindow(self.hwnd)
