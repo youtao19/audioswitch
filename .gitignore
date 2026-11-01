@@ -1,0 +1,51 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+*.manifest
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# 测试 / 类型检查缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ===== 本项目运行时产物 =====
+# 本机生成的配置（含只在本机有效的音频端点 GUID，不要提交）
+config.toml
+config.local.toml
+
+# 日志
+*.log
+logs/
+
+# 打包 / 快捷方式生成的产物
+*.exe
+*.spec
+*.lnk
+aswitch.exe
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

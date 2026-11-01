@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>audioswitch 使用说明</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234F8DF7'/%3E%3Cpath d='M8 20v-4a8 8 0 0 1 16 0v4' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Crect x='5' y='18' width='6' height='9' rx='3' fill='%23fff'/%3E%3Crect x='21' y='18' width='6' height='9' rx='3' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --blue: #4f8df7;
+    --violet: #7c5cf7;
+    --amber: #ffc24b;
+    --ink: #16181d;
+    --ink-2: #454b57;
+    --ink-3: #737b8a;
+    --line: #e3e7ee;
+    --surface: #ffffff;
+    --surface-2: #f6f8fc;
+    --code-bg: #1b1f27;
+    --code-ink: #e6e9f0;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(20, 25, 40, .04), 0 8px 24px rgba(20, 25, 40, .06);
+    --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(124, 92, 247, .10), transparent 60%),
+      radial-gradient(900px 500px at 0% 0%, rgba(79, 141, 247, .12), transparent 55%),
+      var(--surface);
+  }
+  a { color: var(--violet); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd, pre { font-family: var(--mono); }
+  code {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: .1em .38em;
+    font-size: .9em;
+    white-space: nowrap;
+  }
+  kbd {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: .05em .45em;
+    font-size: .85em;
+    color: var(--ink-2);
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+    margin: 0;
+  }
+  pre code { background: none; border: 0; padding: 0; color: inherit; white-space: pre; font-size: inherit; }
+  pre .c { color: #7b8496; }
+  pre .k { color: #8fd3ff; }
+  pre .s { color: #ffd479; }
+
+  /* ---------- layout ---------- */
+  .shell { max-width: 1120px; margin: 0 auto; padding: 0 24px 96px; display: grid; grid-template-columns: 1fr; gap: 0 48px; }
+  @media (min-width: 1040px) {
+    .shell { grid-template-columns: 210px minmax(0, 1fr); }
+    .toc { position: sticky; top: 28px; align-self: start; display: block !important; }
+  }
+  .toc { display: none; padding-top: 8px; font-size: 14px; }
+  .toc h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 10px; font-weight: 700; }
+  .toc a { display: block; padding: 5px 10px; border-radius: 8px; color: var(--ink-2); border-left: 2px solid transparent; }
+  .toc a:hover { background: var(--surface-2); text-decoration: none; color: var(--ink); }
+  main { min-width: 0; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 56px 0 8px; }
+  .hero-top { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .hero-icon { width: 76px; height: 76px; filter: drop-shadow(0 8px 20px rgba(96, 112, 247, .28)); }
+  h1 { font-size: 34px; line-height: 1.15; margin: 0; letter-spacing: -.02em; }
+  h1 small { display: block; font-size: 15px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; margin-top: 6px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; }
+  .pills li {
+    font-size: 13px; color: var(--ink-2); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; box-shadow: var(--shadow);
+  }
+  .pills li::before { content: "●"; color: var(--blue); margin-right: 7px; font-size: 9px; vertical-align: 1px; }
+
+  /* ---------- sections ---------- */
+  section { padding-top: 46px; scroll-margin-top: 20px; }
+  h2 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+  h2 .n {
+    flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+    background: linear-gradient(135deg, var(--blue), var(--violet));
+  }
+  .lead { color: var(--ink-3); margin: 0 0 20px; font-size: 15px; }
+  h3 { font-size: 16px; margin: 28px 0 10px; }
+  p { margin: 0 0 12px; }
+
+  /* ---------- cards ---------- */
+  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .card h4 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .card h4 .dot { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--blue), var(--violet)); }
+  .card p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .card p + p { margin-top: 8px; }
+
+  /* ---------- tables ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { background: var(--surface-2); font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+  tbody tr:hover { background: #fafbff; }
+  td code { white-space: nowrap; }
+
+  /* ---------- callouts ---------- */
+  .note {
+    display: grid; grid-template-columns: 3px 1fr; gap: 14px;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px; margin: 16px 0; font-size: 14.5px; color: var(--ink-2);
+  }
+  .note > .bar { border-radius: 3px; background: linear-gradient(180deg, var(--blue), var(--violet)); }
+  .note.warn > .bar { background: linear-gradient(180deg, var(--amber), #f2932f); }
+  .note strong { color: var(--ink); }
+  .note p:last-child { margin-bottom: 0; }
+
+  /* ---------- steps ---------- */
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
+  ol.steps > li {
+    counter-increment: s; position: relative; padding: 0 0 18px 44px;
+    border-left: 2px dashed var(--line); margin-left: 13px;
+  }
+  ol.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  ol.steps > li::before {
+    content: counter(s); position: absolute; left: -14px; top: -2px;
+    width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    background: #fff; border: 2px solid var(--blue); color: var(--blue); font-size: 13px; font-weight: 700;
+  }
+  ol.steps h4 { margin: 2px 0 6px; font-size: 15px; }
+
+  /* ---------- faq ---------- */
+  details {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 0 18px; margin-bottom: 10px; box-shadow: var(--shadow);
+  }
+  details[open] { border-color: #d7dcf7; }
+  summary { cursor: pointer; padding: 14px 0; font-weight: 600; font-size: 15px; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--ink-3); font-weight: 400; font-size: 18px; line-height: 1; }
+  details[open] summary::after { content: "–"; }
+  details .body { padding: 0 0 16px; color: var(--ink-2); font-size: 14.5px; }
+  details .body > :first-child { margin-top: 0; }
+  details .body pre { margin: 10px 0; }
+
+  .cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13.5px; }
+  footer code { font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="toc">
+    <h2>目录</h2>
+    <a href="#start">快速开始</a>
+    <a href="#daily">日常使用</a>
+    <a href="#cmd">命令速查</a>
+    <a href="#config">配置文件</a>
+    <a href="#auto">自动切换规则</a>
+    <a href="#how">工作原理</a>
+    <a href="#faq">常见问题</a>
+    <a href="#files">文件与维护</a>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="hero-top">
+        <img class="hero-icon" src="data:image/png;base64,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" alt="audioswitch 图标">
+        <h1>audioswitch<small>Windows 音频设备快捷切换 / 自动切换</small></h1>
+      </div>
+      <ul class="pills">
+        <li>零第三方依赖</li>
+        <li>不需要管理员权限</li>
+        <li>不注入进程，反作弊友好</li>
+        <li>播 + 录音一起切</li>
+        <li>开机自启</li>
+      </ul>
+    </header>
+
+    <!-- ============ 快速开始 ============ -->
+    <section id="start">
+      <h2><span class="n">1</span>快速开始</h2>
+      <p class="lead">程序已经装好并配置完成，通常你只需要知道三件事：它现在在跑、怎么手动切、怎么加游戏。</p>
+
+      <div class="cards">
+        <div class="card">
+          <h4><span class="dot"></span>它已经在跑了</h4>
+          <p>守护进程开机自启，负责托盘图标、热键、以及「开游戏自动切耳机」。</p>
+        </div>
+        <div class="card">
+          <h4><span class="dot"></span>手动切</h4>
+          <p>双击桌面的 <strong>切换音频设备</strong>，或按 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd>。</p>
+        </div>
+        <div class="card">
+          <h4><span class="dot"></span>加游戏</h4>
+          <p>把游戏的 <code>.exe</code> 名字加进 <code>config.toml</code> 的 <code>[[rules]]</code>。</p>
+        </div>
+      </div>
+
+      <h3>需要检查状态时</h3>
+      <pre><code><span class="c">:: 打开桌面上的「audioswitch 命令」快捷方式，或手动：</span>
+cd C:\Users\youtao\audioswitch
+aswitch.cmd status</code></pre>
+      <p style="margin-top:12px;color:var(--ink-2);font-size:14.5px">输出第一行就是守护进程状态：</p>
+      <pre><code>守护进程: [运行中]
+可用 profile: 耳机, 音响
+
+  播放/console         扬声器 (Misiom-Scorpio) (misiom_scorpio)
+  ...
+当前设备符合 profile: 耳机
+自动切换规则: 1 条
+当前命中的规则: yuanshen.exe -&gt; 耳机</code></pre>
+    </section>
+
+    <!-- ============ 日常使用 ============ -->
+    <section id="daily">
+      <h2><span class="n">2</span>日常使用</h2>
+      <p class="lead">四种切换方式，随便挑一种顺手的。</p>
+
+      <div class="cards">
+        <div class="card">
+          <h4><span class="dot"></span>桌面快捷方式</h4>
+          <p><strong>切换音频设备</strong>：双击就在 <code>耳机 ⇄ 音响</code> 之间切换，不弹窗。</p>
+          <p><strong>audioswitch 命令</strong>：开控制台，先显示状态和命令速查，然后可以继续敲命令。</p>
+        </div>
+        <div class="card">
+          <h4><span class="dot"></span>托盘菜单</h4>
+          <p>右键托盘图标：</p>
+          <pre style="margin-top:8px"><code> 耳机        ← 当前使用的有对勾
+ 音响
+────────────
+切换（toggle）
+重载配置
+打开配置文件
+退出</code></pre>
+        </div>
+        <div class="card">
+          <h4><span class="dot"></span>全局热键</h4>
+          <div class="tablewrap" style="box-shadow:none;border:0">
+            <table>
+              <tbody>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd></td><td>切到耳机</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>2</kbd></td><td>切到音响</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>3</kbd></td><td>两者互切</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="margin:10px 0 0;font-size:13.5px;color:var(--ink-3)">
+            想换成别的组合改 <code>[hotkeys]</code> 即可。如果改成 <code>Alt+F1</code> 这类被 NVIDIA App
+            占着的键，日志会报 1409，先在 NVIDIA App → 设置 → 快捷键里改掉。
+          </p>
+        </div>
+        <div class="card">
+          <h4><span class="dot"></span>自动</h4>
+          <p>检测到规则里的游戏进程 → 自动切耳机；游戏全部退出 → <code>restore_delay</code> 秒后自动切回音响。</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="bar"></div>
+        <div>
+          <p><strong>热键用的是什么技术？</strong> 系统级 <code>RegisterHotKey</code>，不装键盘钩子、不注入任何进程，所以 Vanguard / EAC 这类反作弊不会管它。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 命令 ============ -->
+    <section id="cmd">
+      <h2><span class="n">3</span>命令速查</h2>
+      <p class="lead">在项目目录下用 <code>aswitch.cmd &lt;命令&gt;</code>，等价于 <code>python -m aswitch &lt;命令&gt;</code>。</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:38%">命令</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>aswitch status</code></td><td>当前默认设备 + 守护进程状态 + 当前命中的规则</td></tr>
+            <tr><td><code>aswitch use 耳机</code></td><td>切到某个 profile（支持中文名）</td></tr>
+            <tr><td><code>aswitch toggle</code></td><td>在 <code>[settings] toggle</code> 的两个 profile 间切换</td></tr>
+            <tr><td><code>aswitch list [-a]</code></td><td>列出音频设备，<code>-a</code> 含未连接/禁用的；<code>--json</code> 输出 JSON</td></tr>
+            <tr><td><code>aswitch start</code> / <code>quit</code></td><td>后台启动 / 停止守护进程</td></tr>
+            <tr><td><code>aswitch help</code></td><td>命令速查（中文）</td></tr>
+            <tr><td><code>aswitch watch</code></td><td>只打印规则命中情况，不切设备 —— 用来查游戏的进程名</td></tr>
+            <tr><td><code>aswitch launch --profile 耳机 -- "C:\game\game.exe"</code></td><td>先切设备，再启动程序（对付启动时锁死音频的游戏）</td></tr>
+            <tr><td><code>aswitch config --open</code></td><td>打印/打开配置文件</td></tr>
+            <tr><td><code>aswitch init [-f]</code></td><td>按当前设备重新生成配置模板（<code>-f</code> 覆盖，会丢掉中文改名）</td></tr>
+            <tr><td><code>aswitch daemon [--no-tray] [--no-hotkeys] [--no-watch] [--dry-run]</code></td><td>前台运行守护进程，调试用</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 配置 ============ -->
+    <section id="config">
+      <h2><span class="n">4</span>配置文件</h2>
+      <p class="lead">位置：<code>C:\Users\youtao\audioswitch\config.toml</code>，改完在托盘里点「重载配置」即可生效。</p>
+
+      <pre><code><span class="c"># ---- 全局设置 ----</span>
+[<span class="k">settings</span>]
+poll_interval = 1.0        <span class="c"># 进程轮询间隔（秒）</span>
+restore_delay = 3.0        <span class="c"># 规则进程全部退出后，延迟多久还原设备</span>
+notify = true              <span class="c"># 切换时弹托盘气泡</span>
+toggle = [<span class="s">"耳机"</span>, <span class="s">"音响"</span>]
+
+<span class="c"># ---- 设备别名 -&gt; 端点 ID（不要改成设备名，ID 才是稳定的）----</span>
+[<span class="k">render</span>]
+high_definition_audio_device = <span class="s">"{0.0.0.00000000}.{0a7f0f97-...}"</span>   <span class="c"># 音响</span>
+misiom_scorpio               = <span class="s">"{0.0.0.00000000}.{b697db47-...}"</span>   <span class="c"># 耳机</span>
+
+[<span class="k">capture</span>]
+misiom_scorpio               = <span class="s">"{0.0.1.00000000}.{089ca479-...}"</span>   <span class="c"># 耳机麦克风</span>
+
+<span class="c"># ---- profile：一套"用到哪些设备"的组合 ----</span>
+[<span class="k">profiles."耳机"</span>]
+render  = <span class="s">"misiom_scorpio"</span>
+capture = <span class="s">"misiom_scorpio"</span>
+<span class="c"># comm_render  = "misiom_scorpio"   # 可选：单独指定"通信设备"（Discord/游戏语音）</span>
+
+[<span class="k">profiles."音响"</span>]
+render = <span class="s">"high_definition_audio_device"</span>
+
+<span class="c"># ---- 自动切换规则 ----</span>
+[[<span class="k">rules</span>]]
+exe = [<span class="s">"cs2.exe"</span>, <span class="s">"valorant-win64-shipping.exe"</span>, <span class="s">"yuanshen.exe"</span>, ...]
+profile = <span class="s">"耳机"</span>
+enabled = true
+
+<span class="c"># ---- 全局热键 ----</span>
+[<span class="k">hotkeys</span>]
+<span class="s">"ctrl+alt+1"</span> = <span class="s">"耳机"</span>
+<span class="s">"ctrl+alt+2"</span> = <span class="s">"音响"</span>
+<span class="s">"ctrl+alt+3"</span> = <span class="s">"toggle"</span></code></pre>
+
+      <h3>几个要点</h3>
+      <div class="tablewrap">
+        <table>
+          <tbody>
+            <tr><td><strong>别名指向端点 ID</strong></td><td>设备名会随驱动/语言变，<code>{0.0.0.…}.{GUID}</code> 不会。用 <code>aswitch list</code> 查看。</td></tr>
+            <tr><td><strong>同一个别名可以在两个表里</strong></td><td>同一台设备的播放端点和录音端点常同名，程序会按上下文取对的那个。</td></tr>
+            <tr><td><strong>三个角色一起切</strong></td><td>每个设备都设 console / multimedia / communications，否则 Discord、游戏语音不会跟着切。</td></tr>
+            <tr><td><strong>profile 名随便取</strong></td><td>中文也行，但改名要同步改三处：<code>toggle</code>、<code>rules.profile</code>、<code>hotkeys</code> 的值。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 自动切换 ============ -->
+    <section id="auto">
+      <h2><span class="n">5</span>自动切换规则</h2>
+      <p class="lead">流程：进程出现 → 切耳机；进程全部退出 → 等 <code>restore_delay</code> 秒 → 还原成进入前的设备。</p>
+
+      <ol class="steps">
+        <li>
+          <h4>找到游戏的进程名</h4>
+          <p>在控制台执行 <code>aswitch watch</code>，然后启动游戏，看输出：</p>
+          <pre><code>命中 yuanshen.exe -&gt; profile 耳机</code></pre>
+          <p>这里要填的是 <strong>进程名</strong>，不是路径、也不是快捷方式名。</p>
+        </li>
+        <li>
+          <h4>加进配置</h4>
+          <pre><code>[[<span class="k">rules</span>]]
+exe = [
+  <span class="s">"yuanshen.exe"</span>,
+  <span class="s">"starrail.exe"</span>,
+  <span class="s">"*shipping.exe"</span>,   <span class="c"># 支持通配符</span>
+]
+profile = <span class="s">"耳机"</span>
+enabled = true</code></pre>
+        </li>
+        <li>
+          <h4>重载</h4>
+          <p>托盘右键 → <strong>重载配置</strong>，或 <code>aswitch quit</code> 再 <code>aswitch start</code>。</p>
+          <p>用 <code>aswitch status</code> 确认「当前命中的规则」显示正确。</p>
+        </li>
+      </ol>
+
+      <div class="note warn">
+        <div class="bar"></div>
+        <div>
+          <p><strong>游戏启动时就把音频设备锁死了？</strong> 个别游戏（WASAPI 独占、部分 Unity/UE）在初始化时固定设备，运行中再切会没声音。
+          用 <code>aswitch launch --profile 耳机 -- "游戏.exe"</code> 先切再启动最稳。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 原理 ============ -->
+    <section id="how">
+      <h2><span class="n">6</span>工作原理</h2>
+      <p class="lead">为什么这么实现 —— 以及为什么它不需要任何第三方库。</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th style="width:24%">环节</th><th style="width:40%">做法</th><th>原因</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>切换默认设备</td>
+              <td>未文档化 COM 接口 <code>IPolicyConfig::SetDefaultEndpoint</code></td>
+              <td>Windows 没有公开 API，同类工具都走这个接口</td>
+            </tr>
+            <tr>
+              <td>三个角色</td>
+              <td>设备设 <code>eConsole</code> / <code>eMultimedia</code> / <code>eCommunications</code></td>
+              <td>只设前两个的话，语音类应用不会跟着切</td>
+            </tr>
+            <tr>
+              <td>设备枚举</td>
+              <td><code>IMMDeviceEnumerator</code> + <code>IPropertyStore</code></td>
+              <td>拿到稳定的端点 ID、友好名、在插/未插状态</td>
+            </tr>
+            <tr>
+              <td>进程检测</td>
+              <td>Toolhelp32 快照轮询（默认 1s）</td>
+              <td>无依赖、开销极小</td>
+            </tr>
+            <tr>
+              <td>热键</td>
+              <td><code>RegisterHotKey</code></td>
+              <td>系统级注册、零注入，不会被反作弊针对</td>
+            </tr>
+            <tr>
+              <td>托盘</td>
+              <td><code>Shell_NotifyIcon</code></td>
+              <td>同上，纯 Win32，无依赖</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>安全边界</h3>
+      <p style="color:var(--ink-2);font-size:14.5px">只做三件事：读默认设备、写默认设备、读进程名列表。不注入、不读写游戏内存、不改注册表、不需要管理员权限。</p>
+    </section>
+
+    <!-- ============ FAQ ============ -->
+    <section id="faq">
+      <h2><span class="n">7</span>常见问题</h2>
+
+      <details open>
+        <summary>开了游戏没有自动切换</summary>
+        <div class="body">
+          <p>九成是<strong>守护进程没在跑</strong>。先看 <code>aswitch status</code> 第一行：</p>
+          <pre><code>守护进程: [未运行]  →  aswitch start</code></pre>
+          <p>如果显示 <code>[运行中]</code>，就看最后一行「当前命中的规则」：没有命中说明进程名不对，用 <code>aswitch watch</code> 拿真名。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>切了，但游戏里还是从音响出声</summary>
+        <div class="body">
+          <p>游戏在启动时锁定了音频设备。用 <code>aswitch launch --profile 耳机 -- "游戏.exe"</code> 先切后启动，或先按热键切好再开游戏。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>耳机没插的时候点了切换没反应</summary>
+        <div class="body">
+          <p>这是故意的：目标设备状态不是 <code>active</code> 时程序拒绝切换，否则会直接静音让你以为坏了。插上耳机再切一次即可。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>游戏退出后没切回音响</summary>
+        <div class="body">
+          <p>检查 <code>restore_delay</code>（默认 3 秒）。另外如果中途手动按过热键，游戏退出时仍会按「进入游戏前」的快照还原；想要永远回音响，把 <code>restore_delay</code> 调小或改成手动热键。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>热键没反应</summary>
+        <div class="body">
+          <p>可能被别的程序占用（错误码 1409）。<code>aswitch.log</code> 里会写「注册热键失败」。换一组组合，或改 <code>[hotkeys]</code>。</p>
+          <p>另外：如果游戏以管理员身份运行，非管理员的热键可能收不到，此时把守护进程也用管理员启动。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>怎么彻底停掉 / 怎么开机自启</summary>
+        <div class="body">
+          <p>停掉：托盘右键退出，或 <code>aswitch quit</code>。</p>
+          <p>开机自启已经配好 —— 快捷方式在 <code>%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\audioswitch.lnk</code>，删掉它就不再自启。</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>看日志</summary>
+        <div class="body">
+          <p><code>C:\Users\youtao\audioswitch\aswitch.log</code>。前台调试：<code>aswitch daemon --verbose</code>。</p>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============ 文件 ============ -->
+    <section id="files">
+      <h2><span class="n">8</span>文件与维护</h2>
+
+      <div class="cols">
+        <div>
+          <h3 style="margin-top:0">目录结构</h3>
+          <pre><code>audioswitch/
+├─ aswitch/            程序包
+│  ├─ com.py           COM 基础设施（ctypes）
+│  ├─ devices.py       端点枚举 / 默认设备
+│  ├─ policy.py        IPolicyConfig（真正的切换）
+│  ├─ config.py        配置读写 + 首次生成
+│  ├─ engine.py        profile 应用 / 快照还原
+│  ├─ watcher.py       进程轮询 + 规则状态机
+│  ├─ hotkey.py        RegisterHotKey
+│  ├─ tray.py          托盘图标与菜单
+│  └─ cli.py           命令行
+├─ assets/
+│  ├─ aswitch.png      图标源图
+│  ├─ aswitch.ico      多尺寸图标
+│  ├─ make-ico.ps1     PNG → ICO
+│  ├─ preview-ico.ps1  ICO 各尺寸预览
+│  └─ make-shortcuts.ps1 重建桌面快捷方式
+├─ config.toml         你的配置
+├─ aswitch.cmd         命令行入口
+├─ aswitch-shell.cmd   命令控制台
+├─ aswitch-daemon.vbs  静默启动
+└─ aswitch.log         运行日志</code></pre>
+        </div>
+
+        <div>
+          <h3 style="margin-top:0">换图标</h3>
+          <p style="color:var(--ink-2);font-size:14.5px">把自己的 PNG 存成 <code>assets\aswitch.png</code>，然后：</p>
+          <pre><code>cd assets
+powershell -ExecutionPolicy Bypass -File make-ico.ps1 <span class="s">`</span>
+  -Source aswitch.png -Output aswitch.ico
+
+<span class="c"># 可选：检查 16px 下能不能看清</span>
+powershell -ExecutionPolicy Bypass -File preview-ico.ps1 <span class="s">`</span>
+  -Ico aswitch.ico
+
+<span class="c"># 重启托盘</span>
+aswitch quit &amp;&amp; aswitch start</code></pre>
+          <p style="color:var(--ink-2);font-size:14.5px">脚本会按 alpha 通道自动裁掉多余留白（留 4%），并生成 16/20/24/32/40/48/64/128/256 九个尺寸。</p>
+
+          <h3>重建桌面快捷方式</h3>
+          <pre><code>powershell -ExecutionPolicy Bypass -File assets\make-shortcuts.ps1</code></pre>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="bar"></div>
+        <div>
+          <p><strong>维护提示：</strong><code>.cmd</code> 批处理只能写 ASCII —— cmd.exe 按 OEM 代码页（中文系统是 GBK）读文件，存 UTF-8 中文会把命令拆坏。中文提示都放在 Python 里（<code>aswitch help</code>）。</p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      audioswitch 0.1.0 · 配置文件 <code>config.toml</code> · 日志 <code>aswitch.log</code> · 需要排查时先跑 <code>aswitch status</code>
+    </footer>
+  </main>
+</div>
+</body>
+</html>
